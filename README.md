@@ -3,7 +3,10 @@
 Simple script to find the label a particular Deezer album/track is on and print 
 a list of all other albums on the service from the same label.
 
-Mostly Claude's work with a little sanity checking by me.
+Mostly Claude's work with a little sanity checking by me.  It's a little slow as
+each album needs to be checked to see if it is single-artist or compilation, for
+some reason Deezer no longer seem to reflect that in a simple way without going
+through the tracks on each one.
 
 #### Example
 
