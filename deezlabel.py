@@ -3,11 +3,14 @@
 List every release on the same label as a given Deezer album.
 
 Usage:
-    python deezer_label.py https://www.deezer.com/en/album/254918272
-    python deezer_label.py https://www.deezer.com/en/album/254918272 --strict
+    python deezlabel.py https://www.deezer.com/en/album/254918272
+    python deezlabel.py https://www.deezer.com/en/album/254918272 --strict
+    python deezlabel.py https://www.deezer.com/en/album/254918272 --by-id
 
 Output (one release per line):
     Artist - Album title  https://www.deezer.com/album/ID
+
+Albums whose tracks are by more than one artist are shown as "Various Artists".
 
 Assisted by Claude
 """
@@ -21,6 +24,8 @@ import requests
 
 API = "https://api.deezer.com"
 ALBUM_RE = re.compile(r"/album/(\d+)")
+VARIOUS_ARTISTS = "Various Artists"
+REQUEST_DELAY = 0.12  # stay under Deezer's ~50 requests / 5 s limit
 
 session = requests.Session()
 session.headers["User-Agent"] = "deezer-label-lister/1.0"
@@ -33,6 +38,7 @@ class DeezerError(Exception):
 def get_json(url, params=None, retries=3):
     """GET a URL and return parsed JSON, raising DeezerError on failure."""
     for attempt in range(retries + 1):
+        time.sleep(REQUEST_DELAY)
         try:
             resp = session.get(url, params=params, timeout=20)
             resp.raise_for_status()
@@ -52,6 +58,16 @@ def get_json(url, params=None, retries=3):
             time.sleep(5)
             continue
         raise DeezerError(f"Deezer API error: {error.get('message', error)}")
+
+
+def get_paged(url, params=None):
+    """Yield every item from a paginated Deezer endpoint."""
+    page = get_json(url, params=params)
+    while True:
+        yield from page.get("data", [])
+        if not page.get("next"):
+            break
+        page = get_json(page["next"])  # "next" already contains the params
 
 
 def resolve_album_id(url):
@@ -81,15 +97,29 @@ def get_album(album_id):
 
 
 def search_label(label):
-    """Yield every album returned by a label search, following pagination."""
+    """Yield every album returned by a label search."""
     # Double quotes inside the label would break the query syntax.
     query = f'label:"{label.replace(chr(34), "")}"'
-    page = get_json(f"{API}/search/album", params={"q": query, "limit": 100})
-    while True:
-        yield from page.get("data", [])
-        if not page.get("next"):
-            break
-        page = get_json(page["next"])  # "next" already contains the params
+    return get_paged(f"{API}/search/album", params={"q": query, "limit": 100})
+
+
+def album_artist(item):
+    """Return the album's artist, or "Various Artists" if tracks differ.
+
+    The search results only give the artist of the first track, so for
+    multi-track releases we check the artist of every track.
+    """
+    first_artist = item.get("artist", {}).get("name", "Unknown artist")
+    if item.get("nb_tracks", 0) <= 1:
+        return first_artist  # a one-track release can't have mixed artists
+
+    artist_ids = set()
+    tracks = get_paged(f"{API}/album/{item['id']}/tracks", params={"limit": 100})
+    for track in tracks:
+        artist_ids.add(track.get("artist", {}).get("id"))
+        if len(artist_ids) > 1:
+            return VARIOUS_ARTISTS  # no need to look at the remaining tracks
+    return first_artist
 
 
 def main():
@@ -131,12 +161,11 @@ def main():
             seen_ids.add(item_id)
 
             if args.strict:
-                time.sleep(0.12)  # stay under Deezer's ~50 requests / 5 s limit
                 item_label = (get_album(item_id).get("label") or "").strip()
                 if item_label.casefold() != label.casefold():
                     continue
 
-            artist = item.get("artist", {}).get("name", "Unknown artist")
+            artist = album_artist(item)
             title = item.get("title", "Unknown title")
             link = item.get("link") or f"https://www.deezer.com/album/{item_id}"
             rows.append((artist, title, link, item_id))
