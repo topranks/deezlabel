@@ -7,6 +7,7 @@ Mostly Claude's work with a little sanity checking by me.
 
 #### Example
 
+```
 rez@laptop:~/deezlabel$ ./deezlabel.py https://www.deezer.com/en/album/434472657 
 Label: Reggae Library
 
@@ -310,4 +311,4 @@ Wayne Wonder          - Anything Goes (Remastered 2024)                         
 Webby Jay             - Reggae Stream                                                    https://www.deezer.com/album/353404127
 Willie Lindo          - Reggae Machine                                                   https://www.deezer.com/album/693361631
 Yami Bolo             - Reggae Trio                                                      https://www.deezer.com/album/416282167
-
+```
