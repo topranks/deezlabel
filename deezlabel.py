@@ -5,10 +5,12 @@ List every release on the same label as a given Deezer album.
 Usage:
     python deezlabel.py https://www.deezer.com/en/album/254918272
     python deezlabel.py https://www.deezer.com/en/album/254918272 --strict
-    python deezlabel.py https://www.deezer.com/en/album/254918272 --by-id
+    python deezlabel.py https://www.deezer.com/en/album/254918272 --by-date
 
 Output (one release per line):
-    Artist - Album title  https://www.deezer.com/album/ID
+    YYYY-MM-DD  Artist - Album title  https://www.deezer.com/album/ID
+
+Sorted by artist, then release date. --by-date sorts by release date only.
 
 Albums whose tracks are by more than one artist are shown as "Various Artists".
 
@@ -103,23 +105,37 @@ def search_label(label):
     return get_paged(f"{API}/search/album", params={"q": query, "limit": 100})
 
 
-def album_artist(item):
+def album_artist(album):
     """Return the album's artist, or "Various Artists" if tracks differ.
 
-    The search results only give the artist of the first track, so for
-    multi-track releases we check the artist of every track.
+    The artist Deezer gives is often just the artist of the first track,
+    so for multi-track releases we check the artist of every track.
     """
-    first_artist = item.get("artist", {}).get("name", "Unknown artist")
-    if item.get("nb_tracks", 0) <= 1:
+    first_artist = album.get("artist", {}).get("name", "Unknown artist")
+    nb_tracks = album.get("nb_tracks", 0)
+    if nb_tracks <= 1:
         return first_artist  # a one-track release can't have mixed artists
 
+    # The full album object usually embeds the track list; only make an
+    # extra request if it's missing or incomplete.
+    tracks = album.get("tracks", {}).get("data", [])
+    if len(tracks) < nb_tracks:
+        tracks = get_paged(f"{API}/album/{album['id']}/tracks",
+                           params={"limit": 100})
+
     artist_ids = set()
-    tracks = get_paged(f"{API}/album/{item['id']}/tracks", params={"limit": 100})
     for track in tracks:
         artist_ids.add(track.get("artist", {}).get("id"))
         if len(artist_ids) > 1:
             return VARIOUS_ARTISTS  # no need to look at the remaining tracks
     return first_artist
+
+
+def date_key(release_date):
+    """Sort key for a release date; missing dates sort last."""
+    if not release_date or release_date.startswith("0000"):
+        return "9999-99-99"
+    return release_date
 
 
 def main():
@@ -130,13 +146,13 @@ def main():
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Fetch each result and keep only exact label matches "
-             "(slower: one extra request per album)",
+        help="Keep only releases whose label matches exactly",
     )
     parser.add_argument(
-        "--by-id",
+        "--by-date", "--by-id",
+        dest="by_date",
         action="store_true",
-        help="Sort by album ID only, ignoring artist name",
+        help="Sort by release date only, ignoring artist name",
     )
     args = parser.parse_args()
 
@@ -160,31 +176,37 @@ def main():
                 continue
             seen_ids.add(item_id)
 
+            # The search results lack the release date, so fetch the full
+            # album. This also gives us the label and (usually) the tracks.
+            album = get_album(item_id)
+
             if args.strict:
-                item_label = (get_album(item_id).get("label") or "").strip()
+                item_label = (album.get("label") or "").strip()
                 if item_label.casefold() != label.casefold():
                     continue
 
-            artist = album_artist(item)
-            title = item.get("title", "Unknown title")
-            link = item.get("link") or f"https://www.deezer.com/album/{item_id}"
-            rows.append((artist, title, link, item_id))
+            artist = album_artist(album)
+            title = album.get("title") or item.get("title", "Unknown title")
+            link = album.get("link") or f"https://www.deezer.com/album/{item_id}"
+            release_date = album.get("release_date") or ""
+            rows.append((artist, title, link, item_id, release_date))
 
         if not rows:
             print("No releases found.", file=sys.stderr)
             return 0
 
-        artist_width = max(len(artist) for artist, _, _, _ in rows)
-        title_width = max(len(title) for _, title, _, _ in rows)
+        artist_width = max(len(artist) for artist, _, _, _, _ in rows)
+        title_width = max(len(title) for _, title, _, _, _ in rows)
 
-        # Sort either just by ID, or by artist name and ID:
-        if args.by_id:
-            rows.sort(key=lambda row: row[3])
+        # Sort by date (ID breaks ties), optionally grouped by artist first.
+        if args.by_date:
+            rows.sort(key=lambda row: (date_key(row[4]), row[3]))
         else:
-            rows.sort(key=lambda row: (row[0].casefold(), row[3]))
+            rows.sort(key=lambda row: (row[0].casefold(),
+                                       date_key(row[4]), row[3]))
 
-        for artist, title, link, _ in rows:
-            print(f"{artist:<{artist_width}} - {title:<{title_width}}  {link}")
+        for artist, title, link, _, release_date in rows:
+            print(f"{artist:<{artist_width}} {title:<{title_width}} {link}")
 
         return 0
 
