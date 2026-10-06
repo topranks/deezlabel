@@ -8,6 +8,10 @@ each album needs to be checked to see if it is single-artist or compilation, for
 some reason Deezer no longer seem to reflect that in a simple way without going
 through the tracks on each one.
 
+There also appears to be a hidden limit on the Dezzer API of returning ~300
+albums max to any query, which unfortunately there does not seem to be any 
+sensible way to work around.
+
 #### Example
 
 ```
