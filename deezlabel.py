@@ -168,7 +168,6 @@ def main():
         print(f"Label: {label}\n", file=sys.stderr)
 
         # Collect everything first so we can work out the column widths.
-        rows = []
         seen_ids = set()
         for item in search_label(label):
             item_id = item["id"]
@@ -176,6 +175,14 @@ def main():
                 continue
             seen_ids.add(item_id)
 
+        if not seen_ids:
+            print("No releases found.", file=sys.stderr)
+            return 0
+
+        i = 1
+        rows = []
+        for item_id in seen_ids:
+            print(f"\rGetting releases {i * 100 // len(seen_ids):3d}%", end="", file=sys.stderr, flush=True)
             # The search results lack the release date, so fetch the full
             # album. This also gives us the label and (usually) the tracks.
             album = get_album(item_id)
@@ -190,10 +197,7 @@ def main():
             link = album.get("link") or f"https://www.deezer.com/album/{item_id}"
             release_date = album.get("release_date") or ""
             rows.append((artist, title, link, item_id, release_date))
-
-        if not rows:
-            print("No releases found.", file=sys.stderr)
-            return 0
+            i += 1
 
         artist_width = max(len(artist) for artist, _, _, _, _ in rows)
         title_width = max(len(title) for _, title, _, _, _ in rows)
@@ -205,6 +209,7 @@ def main():
             rows.sort(key=lambda row: (row[0].casefold(),
                                        date_key(row[4]), row[3]))
 
+        print("\n")
         for artist, title, link, _, release_date in rows:
             print(f"{artist:<{artist_width}} {title:<{title_width}} {link}")
 
