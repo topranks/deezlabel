@@ -182,7 +182,7 @@ def main():
         i = 1
         rows = []
         for item_id in seen_ids:
-            print(f"\rGetting releases {i * 100 // len(seen_ids):3d}%", end="", file=sys.stderr, flush=True)
+            print(f"\rGetting releases {i}/{len(seen_ids)} ({i * 100 // len(seen_ids):3d}%)", end="", file=sys.stderr, flush=True)
             # The search results lack the release date, so fetch the full
             # album. This also gives us the label and (usually) the tracks.
             album = get_album(item_id)
